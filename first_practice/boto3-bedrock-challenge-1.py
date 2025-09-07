@@ -1,0 +1,1 @@
+#write a code using LLM to translate english to french using boto3 and bedrock
