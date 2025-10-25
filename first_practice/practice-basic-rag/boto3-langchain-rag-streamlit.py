@@ -3,12 +3,18 @@ import boto3
 from langchain_aws import ChatBedrockConverse
 from langchain_aws.embeddings import BedrockEmbeddings
 from langchain_community.vectorstores import FAISS
-#from langchain_aws.llms import Bedrock
 from langchain.prompts.prompt import PromptTemplate
 from langchain.chains import LLMChain
 from langchain_community.document_loaders import PyPDFLoader
+import streamlit as st
+from langchain_community.chat_message_histories import StreamlitChatMessageHistory
 
 
+# Configure Streamlit app
+st.set_page_config(page_title="Social Media Training Q&A Assistant", page_icon=":books:")
+st.title(":books: Social Media Q&A Assistant")
+
+@st.cache_resource
 def configure_anthropic_model(temp=1, top_p=1, max_token=1000):
     """This function to configure anthropic model"""
     llm = ChatBedrockConverse(
@@ -19,6 +25,7 @@ def configure_anthropic_model(temp=1, top_p=1, max_token=1000):
     )
     return llm
 
+@st.cache_resource
 def embed_data(filename):
     """
     This function to embed the data using bedrock embeddings and in-memory store in FAISS vectorstore
@@ -49,6 +56,11 @@ llm = configure_anthropic_model(temp=expected_temp, max_token=tokens)
 filename = "./first_practice/practice-basic-rag/knwoledge_doc/social-media-training.pdf"
 vectorstore = embed_data(filename)
 
+# Setup memory for chat history
+chat_history = StreamlitChatMessageHistory(key="langchain_messages")
+if len(chat_history.messages) == 0:
+    chat_history.add_ai_message("Hello! Ask me anything about the Social Media Training document. Type 'exit' to quit.")
+
 #Create prompt template
 my_promprt = """
         system: You are a conversational assistant designed to help answer questions from an employee. 
@@ -75,20 +87,29 @@ prompt = PromptTemplate(
 #Create llm chain
 question_chain = prompt | llm
 
-#Get question, peform similarity search, invoke model and return result
-while True:
-    question = input("Please ask your question about social media training\:n")
-    if question.lower() == "exit":
-        print("Exiting the program.")
-        break
-    
-    #perform vector search
-    info = vector_search(vectorstore, question)
-    
-    #invoke model
-    response = question_chain.invoke({
-        "info": info,
-        "input": question
-    })
+# Render chat messages from StreamlitChatMessageHistory
+for msg in chat_history.messages:
+    st.chat_message(msg.type).write(msg.content)
 
-    print(f"Answer: {response.content}\n")
+#Get user question, peform similarity search, invoke model and return result
+if prompt := st.chat_input("Please ask your question about social media training"):
+    if prompt.lower() == "exit":
+        st.write("Exiting the program.")
+        st.stop
+    else:
+        #perform vector search
+        info = vector_search(vectorstore, prompt)
+        
+        #invoke model
+        response = question_chain.invoke({
+            "info": info,
+            "input": prompt
+        })
+
+        # updating chat hostory and Display user message
+        chat_history.add_user_message(prompt)
+        st.chat_message("user").write(prompt)
+
+        # Display assistant response
+        chat_history.add_ai_message(response.content)
+        st.chat_message("ai").write(response.content) #assistant
